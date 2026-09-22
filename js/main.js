@@ -8,7 +8,7 @@
 // See README.md / SETUP-GUIDE.md for the full step-by-step.
 const CONFIG = {
   // Cloudflare Turnstile dashboard -> your widget -> "Sitekey"
-  TURNSTILE_SITE_KEY: "1x00000000000000000000AA", // <-- REPLACE with your real sitekey
+  TURNSTILE_SITE_KEY: "0x4AAAAAAE_4ymvGka0770oh", // <-- REPLACE with your real sitekey
 
   // Formspree dashboard -> your form -> "Endpoint" (looks like
   // https://formspree.io/f/xxxxabcd). Formspree verifies the Turnstile
