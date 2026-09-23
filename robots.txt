@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://caferz2.lk/sitemap.xml
+Sitemap: https://cafer2urubokka.pages.dev/sitemap.xml
