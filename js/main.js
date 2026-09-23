@@ -21,13 +21,85 @@ const CONFIG = {
 document.addEventListener("DOMContentLoaded", () => {
   initHeader();
   initMobileNav();
+  initHeroSlider();
   initCarousel();
+  initGallery();
   initMenuTabs();
   initScrollTop();
   initTurnstile();
   initContactForm();
   initYear();
 });
+
+/* ---------------- Hero slider (Ken Burns crossfade) ---------------- */
+function initHeroSlider() {
+  const slides = document.querySelectorAll(".hero-slide");
+  if (slides.length < 2) return;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) return; // keep first slide static, no autoplay
+
+  let current = 0;
+  const intervalMs = 6000;
+
+  setInterval(() => {
+    slides[current].classList.remove("active");
+    current = (current + 1) % slides.length;
+    slides[current].classList.add("active");
+  }, intervalMs);
+}
+
+/* ---------------- Gallery: scroll-reveal + lightbox ---------------- */
+function initGallery() {
+  const figures = document.querySelectorAll("#gallery-grid figure");
+  if (!figures.length) return;
+
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in-view");
+            io.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.15 }
+    );
+    figures.forEach((f) => io.observe(f));
+  } else {
+    figures.forEach((f) => f.classList.add("in-view"));
+  }
+
+  const lightbox = document.querySelector("#lightbox");
+  const lightboxImg = document.querySelector("#lightbox-img");
+  const closeBtn = document.querySelector(".lightbox-close");
+  if (!lightbox || !lightboxImg) return;
+
+  function openLightbox(src, alt) {
+    lightboxImg.src = src;
+    lightboxImg.alt = alt || "";
+    lightbox.classList.add("open");
+    lightbox.setAttribute("aria-hidden", "false");
+  }
+  function closeLightbox() {
+    lightbox.classList.remove("open");
+    lightbox.setAttribute("aria-hidden", "true");
+  }
+
+  figures.forEach((f) => {
+    const img = f.querySelector("img");
+    if (!img) return;
+    f.addEventListener("click", () => openLightbox(img.src, img.alt));
+  });
+  if (closeBtn) closeBtn.addEventListener("click", closeLightbox);
+  lightbox.addEventListener("click", (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeLightbox();
+  });
+}
 
 /* ---------------- Sticky / shrinking header ---------------- */
 function initHeader() {
@@ -46,29 +118,107 @@ function initMobileNav() {
   const toggle = document.querySelector(".nav-toggle");
   const nav = document.querySelector(".main-nav");
   if (!toggle || !nav) return;
-  toggle.addEventListener("click", () => {
-    nav.classList.toggle("open");
-    const isOpen = nav.classList.contains("open");
+
+  function setOpen(isOpen) {
+    nav.classList.toggle("open", isOpen);
+    toggle.classList.toggle("open", isOpen);
     toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  }
+
+  toggle.addEventListener("click", () => {
+    setOpen(!nav.classList.contains("open"));
   });
   nav.querySelectorAll("a").forEach((link) => {
-    link.addEventListener("click", () => nav.classList.remove("open"));
+    link.addEventListener("click", () => setOpen(false));
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") setOpen(false);
+  });
+  document.addEventListener("click", (e) => {
+    if (
+      nav.classList.contains("open") &&
+      !nav.contains(e.target) &&
+      !toggle.contains(e.target)
+    ) {
+      setOpen(false);
+    }
   });
 }
 
-/* ---------------- Auto-playing carousel ---------------- */
+/* ---------------- Auto-playing / swipeable carousel ---------------- */
 function initCarousel() {
   const track = document.querySelector(".carousel-track");
+  const dotsWrap = document.querySelector("#sips-dots");
+  const prevBtn = document.querySelector(".carousel-arrow.prev");
+  const nextBtn = document.querySelector(".carousel-arrow.next");
   if (!track) return;
 
+  const cards = Array.from(track.children);
   let autoScroll = true;
-  let dir = 1;
+  let resumeTimer = null;
   const speed = 0.6; // px per frame
 
-  track.addEventListener("mouseenter", () => (autoScroll = false));
-  track.addEventListener("mouseleave", () => (autoScroll = true));
-  track.addEventListener("touchstart", () => (autoScroll = false), { passive: true });
+  // Build dot indicators, one per card.
+  if (dotsWrap) {
+    cards.forEach((_, i) => {
+      const dot = document.createElement("span");
+      dot.className = "dot" + (i === 0 ? " active" : "");
+      dot.addEventListener("click", () => {
+        cards[i].scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+      });
+      dotsWrap.appendChild(dot);
+    });
+  }
+  const dots = dotsWrap ? Array.from(dotsWrap.children) : [];
 
+  function updateActiveDot() {
+    if (!dots.length) return;
+    const trackRect = track.getBoundingClientRect();
+    let closest = 0;
+    let closestDist = Infinity;
+    cards.forEach((card, i) => {
+      const rect = card.getBoundingClientRect();
+      const dist = Math.abs(rect.left - trackRect.left);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = i;
+      }
+    });
+    dots.forEach((d, i) => d.classList.toggle("active", i === closest));
+  }
+
+  function pauseAutoplay() {
+    autoScroll = false;
+    if (resumeTimer) clearTimeout(resumeTimer);
+    // Resume a few seconds after the user stops interacting, rather than
+    // stopping forever (which was the old behaviour on touch devices).
+    resumeTimer = setTimeout(() => {
+      autoScroll = true;
+    }, 3500);
+  }
+
+  track.addEventListener("mouseenter", pauseAutoplay);
+  track.addEventListener("mouseleave", () => {
+    autoScroll = true;
+    if (resumeTimer) clearTimeout(resumeTimer);
+  });
+  track.addEventListener("touchstart", pauseAutoplay, { passive: true });
+  track.addEventListener("scroll", () => {
+    pauseAutoplay();
+    updateActiveDot();
+  }, { passive: true });
+
+  function scrollByCard(dir) {
+    pauseAutoplay();
+    const card = cards[0];
+    const cardWidth = card ? card.getBoundingClientRect().width + 20 : 260;
+    track.scrollBy({ left: dir * cardWidth, behavior: "smooth" });
+  }
+
+  if (prevBtn) prevBtn.addEventListener("click", () => scrollByCard(-1));
+  if (nextBtn) nextBtn.addEventListener("click", () => scrollByCard(1));
+
+  let dir = 1;
   function step() {
     if (autoScroll) {
       const maxScroll = track.scrollWidth - track.clientWidth;
@@ -81,6 +231,7 @@ function initCarousel() {
     requestAnimationFrame(step);
   }
   requestAnimationFrame(step);
+  setInterval(updateActiveDot, 400);
 }
 
 /* ---------------- Menu category tabs ---------------- */
